@@ -3,7 +3,7 @@ suppressPackageStartupMessages({
 })
 
 
-## 1: Read Data ####
+## Read Data ####
 
 ## GJB ##
 
@@ -26,9 +26,9 @@ ea.data <-  read.csv('data/raw//EA/data.csv')
 ea.soc <-  read.csv('data/raw/EA/societies.csv')
 
 
-## 2: Process Data ####
+## Process Data ####
 
-## 2.1: GJB ####
+## GJB ####
 
 ## fix EA id
 gjb.soc$ea_id <- gjb.soc$default_DPL_soc_id
@@ -72,7 +72,7 @@ gjb.soc <- gjb.line_1 %>%
   mutate(prop_group = group_songs/n) %>% 
   left_join(gjb.soc, ., by = 'society_id')
 
-## 2.2: NHS ####
+## NHS ####
 
 ## Corrections
 # fix society names
@@ -139,7 +139,7 @@ nhs.soc <- nhs.eth %>%
   mutate(prop_group = group_txt/n) %>% 
   left_join(nhs.soc, ., by = 'id_nhs')
 
-## 2.3 EA ####
+## EA ####
 
 ea.data <- ea.data %>% 
   filter(var_id == 'EA031' | var_id == 'EA202') %>% 
@@ -167,7 +167,7 @@ nhs.soc <- nhs.soc %>% left_join(ea, by = 'ea_id')
 
 gjb.soc <- gjb.soc %>% left_join(ea, by = 'ea_id')
 
-## 2.4 SCCS ####
+## SCCS ####
 
 sccs.data <- sccs.data %>% 
   filter(var_id == 'SCCS149' |
@@ -205,3 +205,12 @@ nhs.soc$xd_id <- ea_sccs.soc$xd_id[match(nhs.soc$ea_id, ea_sccs.soc$id)]
 
 nhs.soc <- sccs.soc %>% select_if(grepl('xd_id|sccs',names(.))) %>% left_join(nhs.soc,., by = 'xd_id')
 gjb.soc <- sccs.soc %>% select_if(grepl('xd_id|sccs',names(.))) %>% left_join(gjb.soc,., by = 'xd_id')
+
+## Write processed data ####
+
+write.csv(gjb.line_1, 'data/processed/gjb_line_1.csv')
+write.csv(gjb.soc, 'data/processed/gjb_soc.csv')
+write.csv(nhs.eth, 'data/processed/nhs_eth.csv')
+write.csv(nhs.eth.text, 'data/processed/nhs_eth_text.csv')
+write.csv(nhs.soc, 'data/processed/nhs_soc.csv')
+write.csv(sccs.soc, 'data/processed/sccs_soc.csv')
