@@ -1,5 +1,7 @@
 suppressPackageStartupMessages({
   library(tidyverse)
+  library(lavaan)
+  library(semTools)
 })
 
 
@@ -9,6 +11,7 @@ suppressPackageStartupMessages({
 
 gjb.data <- read.csv('data/raw/GJB/data.csv')
 gjb.soc <- read.csv('data/raw/GJB/societies.csv')
+gjb.songs <- read.csv('data/raw/GJB/songs.csv')
 
 ## NHS ##
 
@@ -64,13 +67,57 @@ gjb.line_1$group.score[gjb.line_1$code == 6]  <- 4  # unison
 gjb.line_1$group.score[gjb.line_1$code == 5]  <- 4  # unison
 gjb.line_1$group.score[gjb.line_1$code == 13] <- 5  # interlock
 
-# insert proportion of group singing per society, ignoring duplicates
+# insert number of songs
 gjb.soc <- gjb.line_1 %>%
   distinct(song_id, .keep_all = T) %>%
   group_by(society_id) %>%
-  summarise(n = n(), group_songs = sum(group)) %>% 
-  mutate(prop_group = group_songs/n) %>% 
+  summarise(n = n()) %>%
   left_join(gjb.soc, ., by = 'society_id')
+
+# insert number of group songs
+gjb.soc <- gjb.line_1 %>%
+  distinct(song_id, group, .keep_all = T) %>%
+  group_by(society_id) %>%
+  summarise(group_songs = sum(group)) %>%
+  left_join(gjb.soc, ., by = 'society_id')
+
+# calculate proportion of group singing
+gjb.soc <- gjb.soc %>% 
+  mutate(prop_group = group_songs/n)
+
+# code contexts in GJB
+gjb.songs$Religious <- 0
+gjb.songs$Religious[grep('religious|ritual|rite|pray|initiation|spirit|shaman',gjb.songs$Song, ignore.case = T)] <- 1
+gjb.songs$Religious[grep('religious|ritual|rite|pray|initiation|spirit|shaman',gjb.songs$Genre, ignore.case = T)] <- 1
+gjb.songs$Religious[grep('religious|ritual|rite|pray|initiation|spirit|shaman',gjb.songs$Song_notes, ignore.case = T)] <- 1
+
+gjb.songs$Dance <- 0
+gjb.songs$Dance[grep('dance|dancing',gjb.songs$Song, ignore.case = T)] <- 1
+gjb.songs$Dance[grep('dance|dancing',gjb.songs$Genre, ignore.case = T)] <- 1
+gjb.songs$Dance[grep('dance|dancing',gjb.songs$Song_notes, ignore.case = T)] <- 1
+
+gjb.songs$Mourning <- 0
+gjb.songs$Mourning[grep('mourn|lament|funera',gjb.songs$Song, ignore.case = T)] <- 1
+gjb.songs$Mourning[grep('mourn|lament|funera',gjb.songs$Genre, ignore.case = T)] <- 1
+gjb.songs$Mourning[grep('mourn|lament|funera',gjb.songs$Song_notes, ignore.case = T)] <- 1
+
+gjb.songs$Healing <- 0
+gjb.songs$Healing[grep('heal|curing|cure',gjb.songs$Song, ignore.case = T)] <- 1
+gjb.songs$Healing[grep('heal|curing|cure',gjb.songs$Genre, ignore.case = T)] <- 1
+gjb.songs$Healing[grep('heal|curing|cure',gjb.songs$Song_notes, ignore.case = T)] <- 1
+
+gjb.songs$Lullaby <- 0
+gjb.songs$Lullaby[grep('lullab',gjb.songs$Song, ignore.case = T)] <- 1
+gjb.songs$Lullaby[grep('lullab',gjb.songs$Genre, ignore.case = T)] <- 1
+gjb.songs$Lullaby[grep('lullab',gjb.songs$Song_notes, ignore.case = T)] <- 1
+
+gjb.context <- gjb.songs %>% 
+  select(song_id, society_id, Religious, Dance, Mourning, Healing, Lullaby) %>% 
+  filter(Religious == 1 | Dance == 1 | Mourning == 1 | Healing == 1 | Lullaby == 1)
+
+gjb.context <- gjb.line_1 %>% 
+  distinct(song_id, group) %>% 
+  left_join(gjb.context, ., multiple = 'all', by = 'song_id')
 
 ## NHS ####
 
@@ -139,10 +186,39 @@ nhs.soc <- nhs.eth %>%
   mutate(prop_group = group_txt/n) %>% 
   left_join(nhs.soc, ., by = 'id_nhs')
 
+# NHS context coding
+
+contexts <- c('Religious',
+              'Dance',
+              'Mourning',
+              'Healing',
+              'Games',
+              'Spectacles',
+              'Marriage',
+              'Infant care',
+              'Ceremonies',
+              'Storytelling',
+              'Work')
+
+nhs.context <- nhs.eth %>% 
+  mutate(context = 
+           recode(context1,
+                  'Religious practices (religious experiences, prayers, sacrifices, purification, divination)' = 'Religious',
+                  'Death (burials, funerals, mourning)' = 'Mourning',
+                  'Sickness, medical care, and shamans' = 'Healing',
+                  'Infancy and childhood' = 'Infant care',
+                  'Cultural identity and pride' = 'Ceremonies',
+                  'Agriculture' = 'Work',
+                  'Labor' = 'Work')) %>%
+  left_join(select(nhs.eth.text, indx, kf_context), by = 'indx') %>% 
+  mutate(context = replace(context, grepl('story',kf_context), 'Storytelling')) %>%
+  filter(context %in% contexts) %>% 
+  select(indx, id_nhs, context, group) 
+
 ## EA ####
 
 ea.data <- ea.data %>% 
-  filter(var_id == 'EA031' | var_id == 'EA202') %>% 
+  filter(var_id == 'EA031') %>% 
   select(soc_id, var_id, code)
 
 ea <- pivot_wider(ea.data, names_from = var_id, values_from = code) %>% 
@@ -150,18 +226,6 @@ ea <- pivot_wider(ea.data, names_from = var_id, values_from = code) %>%
 
 # standardize EA031
 ea$std_EA031 = ea$EA031 / max(ea$EA031, na.rm = TRUE)
-
-# fix population size
-# Amhara
-ea[ea$ea_id == 'Ca7', 'EA202'] <- 12000000
-# Bahia Brazilians
-ea[ea$ea_id == 'Cf4', 'EA202'] <- 6000000
-# Serbs
-ea[ea$ea_id == 'Ch1', 'EA202'] <- 6000000
-# Koreans
-ea[ea$ea_id == 'Ed1', 'EA202'] <- 19000000
-# Uttar Pradesh
-ea[ea$ea_id == 'Ef11', 'EA202'] <- 60000000
 
 nhs.soc <- nhs.soc %>% left_join(ea, by = 'ea_id')
 
@@ -206,11 +270,138 @@ nhs.soc$xd_id <- ea_sccs.soc$xd_id[match(nhs.soc$ea_id, ea_sccs.soc$id)]
 nhs.soc <- sccs.soc %>% select_if(grepl('xd_id|sccs',names(.))) %>% left_join(nhs.soc,., by = 'xd_id')
 gjb.soc <- sccs.soc %>% select_if(grepl('xd_id|sccs',names(.))) %>% left_join(gjb.soc,., by = 'xd_id')
 
+
+## Social complexity latent variables ####
+
+## SCCS: comparing latent variable models of social complexity ##
+
+# Model 1: social complexity as single dimension
+sc1 <- 'comp =~ sccs149.writing.s +
+  sccs150.residence.s +
+  sccs151.agriculture.s +
+  sccs152.urbanization.s +
+  sccs153.tech_spec.s +
+  sccs154.transport.s +
+  sccs155.money.s +
+  sccs156.dens_pop.s +
+  sccs157.pol_int.s +
+  sccs158.strat.s'
+
+# Model 2: social complexity as two dimensions:
+# TSD = Social differentiation
+# RI = population size and agriculture
+sc2 <- 'tsd =~  sccs149.writing.s +
+  sccs153.tech_spec.s +
+  sccs154.transport.s +
+  sccs155.money.s +
+  sccs157.pol_int.s +
+  sccs158.strat.s
+  
+  ri =~  sccs150.residence.s +
+  sccs151.agriculture.s +
+  sccs152.urbanization.s +
+  sccs156.dens_pop.s'
+
+# Model 3: social complexity as previous two dimensions, removing land transport
+sc3 <- 'tsd =~  sccs149.writing.s +
+  sccs153.tech_spec.s +
+  sccs155.money.s +
+  sccs157.pol_int.s +
+  sccs158.strat.s
+  
+  ri =~  sccs150.residence.s +
+  sccs151.agriculture.s +
+  sccs152.urbanization.s +
+  sccs156.dens_pop.s'
+
+# fit models
+fitsc1 <- cfa(sc1, 
+              data = sccs.soc, 
+              ordered = c('sccs149.writing.s',
+                          'sccs150.residence.s',
+                          'sccs151.agriculture.s',
+                          'sccs152.urbanization.s',
+                          'sccs153.tech_spec.s',
+                          'sccs154.transport.s',
+                          'sccs155.money.s',
+                          'sccs156.dens_pop.s',
+                          'sccs157.pol_int.s',
+                          'sccs158.strat.s'))
+
+fitsc2 <- cfa(sc2, 
+              data = sccs.soc, 
+              ordered = c('sccs149.writing.s',
+                          'sccs153.tech_spec.s',
+                          'sccs154.transport.s',
+                          'sccs155.money.s',
+                          'sccs157.pol_int.s',
+                          'sccs158.strat.s',
+                          'sccs150.residence.s',
+                          'sccs151.agriculture.s',
+                          'sccs152.urbanization.s',
+                          'sccs156.dens_pop.s'))
+
+fitsc3 <- cfa(sc3, 
+              data = sccs.soc, 
+              ordered = c('sccs149.writing.s',
+                          'sccs153.tech_spec.s',
+                          'sccs155.money.s',
+                          'sccs157.pol_int.s',
+                          'sccs158.strat.s',
+                          'sccs150.residence.s',
+                          'sccs151.agriculture.s',
+                          'sccs152.urbanization.s',
+                          'sccs156.dens_pop.s'))
+
+# two dimensions (sc2) - significantly better fit
+summary(compareFit(fitsc1, fitsc2))
+
+# sc3 meets standard rmsea and srmr criteria, sc2 does not
+# sc2 cfi 0.987 rmsea 0.108 srmr 0.089
+fitMeasures(fitsc2, c("cfi","rmsea", "srmr"))
+# sc3 cfi 0.998 rmsea 0.047 srmr 0.054
+fitMeasures(fitsc3, c("cfi","rmsea", "srmr"))
+
+# predict tsd (social differentiation) and ri (population size and agriculture) values 
+# insert into full sccs sample
+sccs.soc.sc = cbind(sccs.soc, lavPredict(fitsc3))
+
+# insert tsd and ri to GJB and NHS
+gjb.soc <- sccs.soc.sc %>% 
+  select(xd_id, tsd, ri) %>% 
+  left_join(gjb.soc,., by = 'xd_id')
+
+nhs.soc <- sccs.soc.sc %>% 
+  select(xd_id, tsd, ri) %>% 
+  left_join(nhs.soc,., by = 'xd_id')
+
+# GJB: merge societies with same ea_id
+gjb.soc.ea <- gjb.soc %>% 
+  filter(!is.na(ea_id)) %>% 
+  select(Society_latitude,
+         Society_longitude,
+         ea_id,
+         n,
+         prop_group,
+         std_EA031,
+         tsd,
+         ri) %>% 
+  group_by(ea_id) %>% 
+  summarise(across(where(is.double), \(x) mean(x, na.rm = TRUE), .names = '{.col}'), n = sum(n, na.rm = T))
+
+gjb.soc.ea <- gjb.soc %>% 
+  filter(!is.na(ea_id)) %>% 
+  select(ea_id, Region, xd_id, EA031) %>% 
+  distinct(ea_id, .keep_all = T) %>% 
+  left_join(gjb.soc.ea,.,by = 'ea_id')
+
 ## Write processed data ####
 
-write.csv(gjb.line_1, 'data/processed/gjb_line_1.csv')
-write.csv(gjb.soc, 'data/processed/gjb_soc.csv')
-write.csv(nhs.eth, 'data/processed/nhs_eth.csv')
-write.csv(nhs.eth.text, 'data/processed/nhs_eth_text.csv')
-write.csv(nhs.soc, 'data/processed/nhs_soc.csv')
-write.csv(sccs.soc, 'data/processed/sccs_soc.csv')
+write.csv(gjb.line_1, 'data/processed/gjb_line_1.csv', row.names = FALSE)
+write.csv(gjb.soc, 'data/processed/gjb_soc.csv', row.names = FALSE)
+write.csv(gjb.soc.ea, 'data/processed/gjb_soc_ea.csv', row.names = FALSE)
+write.csv(gjb.context, 'data/processed/gjb_context.csv', row.names = FALSE)
+write.csv(nhs.eth, 'data/processed/nhs_eth.csv', row.names = FALSE)
+write.csv(nhs.context, 'data/processed/nhs_context.csv', row.names = FALSE)
+write.csv(nhs.soc, 'data/processed/nhs_soc.csv', row.names = FALSE)
+write.csv(sccs.soc, 'data/processed/sccs_soc.csv', row.names = FALSE)

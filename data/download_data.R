@@ -9,6 +9,7 @@ library(tidyverse)
 
 gjb.data <- read_csv("https://raw.githubusercontent.com/theglobaljukebox/cantometrics/master/cldf/data.csv")
 gjb.soc <- read_csv("https://raw.githubusercontent.com/theglobaljukebox/cantometrics/master/raw/societies.csv")
+gjb.songs <- read_csv("https://raw.githubusercontent.com/theglobaljukebox/cantometrics/master/cldf/songs.csv")
 
 ## NHS ##
 
@@ -29,6 +30,7 @@ ea.soc <-  read_csv("https://raw.githubusercontent.com/D-PLACE/dplace-data/maste
 
 write.csv(gjb.data, 'data/raw/GJB/data.csv')
 write.csv(gjb.soc, 'data/raw/GJB/societies.csv')
+write.csv(gjb.songs, 'data/raw/GJB/songs.csv')
 write.csv(nhs.eth, 'data/raw/NHS/NHSEthnography_AnnotateSec.csv')
 write.csv(nhs.eth.text, 'data/raw/NHS/NHSEthnography_FreeText.csv')
 write.csv(nhs.soc, 'data/raw/NHS/NHSEthnography_Metadata.csv.csv')
