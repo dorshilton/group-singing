@@ -204,7 +204,7 @@ design = c('AAAAAAACCCC
 fig1 <- wrap_plots(gjb_map,nhs_map,regions,ncol = 2, design = design, heights = c(3,3)) + plot_annotation(tag_levels = 'A') &
   theme(plot.tag = element_text(face = 'bold'))
 
-ggsave('results/Fig1.pdf', fig1, width = 10)
+ggsave('results/Fig1.pdf', fig1, width = 10, dpi = 300)
 
 ## Social context ####
 
@@ -394,7 +394,7 @@ gjb_context <- ggplot(gjb.context.pred,
 fig2 <- wrap_plots(nhs_context, gjb_context,nrow = 2, heights = c(5,3)) + plot_annotation(tag_levels = 'A') &
   theme(plot.tag = element_text(face = 'bold'))
 
-ggsave('results/Fig2.pdf', fig2, height = 10, width = 8)
+ggsave('results/Fig2.pdf', fig2, height = 10, width = 8, dpi = 300)
 
 
 ## Community size ####
@@ -582,7 +582,7 @@ design2 = c('AAAABBBB
 
 fig3 <- wrap_plots(gjb_31, nhs_31, both_031, nrow = 2, design = design2) + plot_annotation(tag_levels = 'A')
 
-ggsave('results/Fig3.pdf', fig3, height = 8, width = 10)
+ggsave('results/Fig3.pdf', fig3, height = 8, width = 10, dpi = 300)
 
 
 ## Social Differentiation ####
@@ -602,6 +602,8 @@ m.tsd.gjb <- glmer(group ~ tsd + (1|xd_id),
 
 summary(m.tsd.gjb)
 
+performance::r2_nakagawa(m.tsd.gjb)
+
 ## NHS
 d.nhs.tsd <- nhs.soc %>%
   filter(n > 9) %>%
@@ -614,6 +616,8 @@ m.tsd.nhs <- glmer(group ~ tsd + (1|xd_id),
                      data = d.nhs.tsd)
 
 summary(m.tsd.nhs)
+
+performance::r2_nakagawa(m.tsd.nhs)
 
 
 ## Sociovocal scale
@@ -630,7 +634,7 @@ d.sc.sccs <- d.gjb.sc %>%
   select(song_id, xd_id, group.score, tsd, ri) %>% 
   drop_na()
 
-# Cumulative multilevel models
+# Cumulative multilevel model
 bm.sv.tsd <- brm(group.score ~ tsd + (1|xd_id),
                  data = d.sc.sccs,
                  family = 'cumulative',
@@ -638,24 +642,6 @@ bm.sv.tsd <- brm(group.score ~ tsd + (1|xd_id),
                  iter = 5000,
                  cores = 4,
                  control = list(adapt_delta = 0.9))
-
-bm.sv.ri <- brm(group.score ~ ri + (1|xd_id),
-                data = d.sc.sccs,
-                family = 'cumulative',
-                warmup = 1500,
-                iter = 5000,
-                cores = 4,
-                control = list(adapt_delta = 0.9))
-
-# mcmc diagnostics
-mcmc_trace(bm.sv.tsd, regex_pars = '^b_')
-mcmc_rank_hist(bm.sv.tsd, regex_pars = '^b_')
-mcmc_trace(bm.sv.ri, regex_pars = '^b_')
-mcmc_rank_hist(bm.sv.ri, regex_pars = '^b_')
-
-# parameter estimates
-summary(bm.sv.tsd)
-summary(bm.sv.ri)
 
 # category-specific effects
 bm.tsd.cs <- brm(group.score ~ cs(tsd) + (1|xd_id),
@@ -666,7 +652,25 @@ bm.tsd.cs <- brm(group.score ~ cs(tsd) + (1|xd_id),
                  cores = 4,
                  control = list(adapt_delta = 0.9))
 
+
+# mcmc diagnostics
+mcmc_trace(bm.sv.tsd, regex_pars = '^b_')
+mcmc_rank_hist(bm.sv.tsd, regex_pars = '^b_')
+mcmc_trace(bm.tsd.cs, regex_pars = '^b_')
+mcmc_rank_hist(bm.tsd.cs, regex_pars = '^b_')
+
+# parameter estimates
+summary(bm.sv.tsd)
 summary(bm.tsd.cs)
+
+sv.tsd <- cbind(d.sc.sccs, predict(bm.sv.tsd))
+
+# societies driving the effect
+sv.tsd %>% 
+  filter(`P(Y = 1)` > 0.3) %>% 
+  group_by(xd_id) %>% 
+  summarise(n = n()) %>% 
+  left_join(select(gjb.soc, xd_id, society), by = 'xd_id')
 
 ## figure 4 #####
 
@@ -683,9 +687,6 @@ svcol <- c('#d43f3a',
            '#af57a6',
            '#776fbf',
            '#357ebd')
-
-
-sv.tsd <- cbind(d.sc.sccs, predict(bm.sv.tsd))
 
 d.fig4 <- sv.tsd %>% 
   rename(Interlocked = `P(Y = 1)`) %>% 
@@ -722,7 +723,7 @@ fig4 <- ggplot(d.fig4, aes(x = tsd, y = Probability, colour = Level, fill = Leve
         axis.title = element_text(size = 13),
         axis.text = element_text(size = 10))
 
-ggsave('results/Fig4.pdf', fig4, width = 14, height = 4)
+ggsave('results/Fig4.pdf', fig4, width = 14, height = 4, dpi = 300)
 
 ## Supplementary Materials ####
 
