@@ -56,16 +56,16 @@ gjb.line_1$group <- ifelse(gjb.line_1$code > 4, 1, 0)
 
 # group score, rated from most emphasis on solo to most integrated group singing
 gjb.line_1$group.score <- NA
-gjb.line_1$group.score[gjb.line_1$code == 2]  <- 1  # solo
-gjb.line_1$group.score[gjb.line_1$code == 4]  <- 1  # solo
-gjb.line_1$group.score[gjb.line_1$code == 8]  <- 2  # leader group alternate
-gjb.line_1$group.score[gjb.line_1$code == 10] <- 2  # leader group overlap
-gjb.line_1$group.score[gjb.line_1$code == 11] <- 2  # group leader overlap
+gjb.line_1$group.score[gjb.line_1$code == 13] <- 1  # interlock
+gjb.line_1$group.score[gjb.line_1$code == 6]  <- 2  # unison
+gjb.line_1$group.score[gjb.line_1$code == 5]  <- 2  # unison
 gjb.line_1$group.score[gjb.line_1$code == 9]  <- 3  # group group alternate
 gjb.line_1$group.score[gjb.line_1$code == 12] <- 3  # group group overlap
-gjb.line_1$group.score[gjb.line_1$code == 6]  <- 4  # unison
-gjb.line_1$group.score[gjb.line_1$code == 5]  <- 4  # unison
-gjb.line_1$group.score[gjb.line_1$code == 13] <- 5  # interlock
+gjb.line_1$group.score[gjb.line_1$code == 8]  <- 4  # leader group alternate
+gjb.line_1$group.score[gjb.line_1$code == 10] <- 4  # leader group overlap
+gjb.line_1$group.score[gjb.line_1$code == 11] <- 4  # group leader overlap
+gjb.line_1$group.score[gjb.line_1$code == 2]  <- 5  # solo
+gjb.line_1$group.score[gjb.line_1$code == 4]  <- 5  # solo
 
 # insert number of songs
 gjb.soc <- gjb.line_1 %>%
@@ -393,7 +393,12 @@ gjb.soc.ea <- gjb.soc %>%
   filter(!is.na(ea_id)) %>% 
   select(ea_id, Region, xd_id, EA031) %>% 
   distinct(ea_id, .keep_all = T) %>% 
-  left_join(gjb.soc.ea,.,by = 'ea_id')
+  left_join(gjb.soc.ea,.,by = 'ea_id') %>% 
+  mutate(n_ea = n)
+
+# add n songs per ea_id
+gjb.soc <- gjb.soc %>% 
+  left_join(select(gjb.soc.ea, ea_id, n_ea), by = 'ea_id')
 
 ## Write processed data ####
 

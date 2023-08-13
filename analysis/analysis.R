@@ -97,6 +97,7 @@ gjb.soc.no_ea <- gjb.soc %>%
          Society_longitude,
          ea_id,
          n,
+         n_ea,
          prop_group,
          EA031,
          std_EA031,
@@ -203,7 +204,7 @@ design = c('AAAAAAACCCC
 fig1 <- wrap_plots(gjb_map,nhs_map,regions,ncol = 2, design = design, heights = c(3,3)) + plot_annotation(tag_levels = 'A') &
   theme(plot.tag = element_text(face = 'bold'))
 
-ggsave('results/Fig1.pdf', fig1, width = 10)
+ggsave('results/Fig1.pdf', fig1, width = 10, dpi = 300)
 
 ## Social context ####
 
@@ -393,19 +394,10 @@ gjb_context <- ggplot(gjb.context.pred,
 fig2 <- wrap_plots(nhs_context, gjb_context,nrow = 2, heights = c(5,3)) + plot_annotation(tag_levels = 'A') &
   theme(plot.tag = element_text(face = 'bold'))
 
-ggsave('results/Fig2.pdf', fig2, height = 10, width = 8)
+ggsave('results/Fig2.pdf', fig2, height = 10, width = 8, dpi = 300)
 
 
 ## Community size ####
-
-## GJB
-
-# quadratic regression
-m.ea031.gjb <- lm(prop_group ~ poly(std_EA031,2),
-                    data = subset(gjb.soc.ea, n > 9 & !is.na(std_EA031)))
-
-# R2 = 0.18, b = -1.2, p < 0.001
-summary(m.ea031.gjb)
 
 # confirm choice of quadratic regression using GAM
 gam.ea031.gjb <- gam(formula = prop_group ~ s(std_EA031, k = 8),
@@ -415,24 +407,64 @@ gam.ea031.gjb <- gam(formula = prop_group ~ s(std_EA031, k = 8),
 # edf = 2.64 p < 0.001
 summary(gam.ea031.gjb)
 
+## GJB
+d.gjb.ea031 <- gjb.soc %>%
+  filter(n_ea > 9) %>%
+  select(society_id, ea_id, xd_id, std_EA031) %>%
+  left_join(select(gjb.line_1, society_id, group), ., by = 'society_id') %>% 
+  drop_na(std_EA031)
+
+m.ea031.gjb <- glmer(group ~ poly(std_EA031, 2, raw = TRUE) + (1|ea_id),
+                     family = binomial,
+                     data = d.gjb.ea031)
+
+summary(m.ea031.gjb)
+
+performance::r2_nakagawa(m.ea031.gjb)
 
 ## NHS
+d.nhs.ea031 <- nhs.soc %>%
+  filter(n > 9) %>%
+  select(id_nhs, ea_id, xd_id, std_EA031) %>%
+  left_join(select(nhs.eth, id_nhs, group), ., by = 'id_nhs') %>% 
+  drop_na(std_EA031)
 
-# linear regression
-m.ea031.nhs <- lm(prop_group ~ std_EA031,
-                    data = subset(nhs.soc, n > 9 & !is.na(std_EA031)))
+m.ea031.nhs <- glmer(group ~ poly(std_EA031, 2, raw = TRUE) + (1|ea_id),
+                     family = binomial,
+                     data = d.nhs.ea031)
 
-# p = 0.07
 summary(m.ea031.nhs)
 
-# confirm choice of linear regression using GAM
-gam.ea031.nhs <- gam(formula = prop_group ~ s(std_EA031, k = 8),
-                     data = subset(nhs.soc, n > 9),
-                     method = 'REML')
+performance::r2_nakagawa(m.ea031.nhs)
 
-# edf = 1
-summary(gam.ea031.nhs)
+## Both
 
+# combine datasets
+d.gjb.ea031 <- d.gjb.ea031 %>% mutate(dataset = 'GJB')
+d.nhs.ea031 <- d.nhs.ea031 %>% mutate(dataset = 'NHS') %>% rename(society_id = id_nhs)
+d.both.ea031 <- rbind(d.gjb.ea031, d.nhs.ea031)
+
+m.ea031.both <- glmer(group ~ poly(std_EA031, 2, raw = TRUE) + (1|ea_id),
+                      family = binomial,
+                      data = d.both.ea031)
+
+summary(m.ea031.both)
+
+performance::r2_nakagawa(m.ea031.both)
+
+# include only societies in SCCS
+
+d.ea031.sccs <- d.both.ea031 %>% filter(!is.na(xd_id))
+
+m.ea031.sccs <- glmer(group ~ poly(std_EA031, 2, raw = TRUE) + (1|ea_id),
+                      family = binomial,
+                      data = d.ea031.sccs)
+
+summary(m.ea031.sccs)
+
+performance::r2_nakagawa(m.ea031.sccs)
+
+## Figure 3 ####
 
 ## combine datasets, merge societies in both
 gjb.nhs.full <- gjb.soc.ea %>% 
@@ -451,27 +483,6 @@ gjb.nhs.full <- gjb.soc.ea %>%
          dataset = ifelse(!is.na(society_id)&!is.na(id_nhs), 'Both',
                           ifelse(!is.na(id_nhs), 'NHS','GJB'))) %>% 
   select(-contains('.'))
-
-d.ea031 <- gjb.nhs.full %>% 
-  filter(n > 9 & !is.na(std_EA031))
-
-m.ea031 <- lm(prop_group ~ poly(std_EA031,2) + factor(dataset),
-                data = d.ea031)
-
-# R2 = 0.12, b = -1.1, p < 0.001
-summary(m.ea031)
-
-# include only societies in SCCS
-d.ea031.sccs <- d.ea031 %>% filter(!is.na(tsd))
-
-m.ea031.sccs <- lm(prop_group ~ poly(std_EA031,2) + factor(dataset),
-              data = d.ea031.sccs)
-
-# R2 = 0.11, b = -0.8, p = 0.009
-summary(m.ea031.sccs)
-
-
-## Figure 3 ####
 
 both_031 <- ggplot(subset(gjb.nhs.full, n > 9 & !is.na(EA031)), 
                    aes(x = factor(EA031,
@@ -571,28 +582,42 @@ design2 = c('AAAABBBB
 
 fig3 <- wrap_plots(gjb_31, nhs_31, both_031, nrow = 2, design = design2) + plot_annotation(tag_levels = 'A')
 
-ggsave('results/Fig3.pdf', fig3, height = 8, width = 10)
+ggsave('results/Fig3.pdf', fig3, height = 8, width = 10, dpi = 300)
 
 
 ## Social Differentiation ####
 
 ## proportion of group singing 
 
-# data for models
-gjb.nhs.sccs <- gjb.nhs.full %>% 
-  select(ea_id, prop_group, tsd, ri, Region, n, dataset) %>% 
-  filter(n > 9) %>% 
-  drop_na()
-  
-# Social differentiation
-m.prop.tsd <- lmerTest::lmer(prop_group ~ tsd + factor(dataset) + (1|Region), gjb.nhs.sccs)
+## GJB
+d.gjb.tsd <- gjb.soc %>%
+  filter(n > 9) %>%
+  select(society_id, xd_id, tsd) %>%
+  left_join(select(gjb.line_1, society_id, group), ., by = 'society_id') %>% 
+  drop_na(tsd)
 
-# Population size and agriculture
-m.prop.ri <- lmerTest::lmer(prop_group ~ ri + factor(dataset) + (1|Region), gjb.nhs.sccs)
+m.tsd.gjb <- glmer(group ~ tsd + (1|xd_id),
+                     family = binomial,
+                     data = d.gjb.tsd)
 
-summary(m.prop.tsd)
+summary(m.tsd.gjb)
 
-summary(m.prop.ri)
+performance::r2_nakagawa(m.tsd.gjb)
+
+## NHS
+d.nhs.tsd <- nhs.soc %>%
+  filter(n > 9) %>%
+  select(id_nhs, xd_id, tsd) %>%
+  left_join(select(nhs.eth, id_nhs, group), ., by = 'id_nhs') %>% 
+  drop_na(tsd)
+
+m.tsd.nhs <- glmer(group ~ tsd + (1|xd_id),
+                     family = binomial,
+                     data = d.nhs.tsd)
+
+summary(m.tsd.nhs)
+
+performance::r2_nakagawa(m.tsd.nhs)
 
 
 ## Sociovocal scale
@@ -600,17 +625,17 @@ summary(m.prop.ri)
 # data for models
 d.gjb.sc <- gjb.soc %>%
   filter(n > 9) %>%
-  select(society_id, xd_id, tsd, ri, Region) %>%
+  select(society_id, xd_id, tsd, ri) %>%
   left_join(select(gjb.line_1, song_id, society_id, group.score), ., by = 'society_id') %>%
   mutate(across(c(group.score), ordered)) 
 
 # SCCS subset
 d.sc.sccs <- d.gjb.sc %>% 
-  select(song_id, xd_id, Region, group.score, tsd, ri) %>% 
+  select(song_id, xd_id, group.score, tsd, ri) %>% 
   drop_na()
 
-# Cumulative multilevel models
-bm.sv.tsd <- brm(group.score ~ tsd + (1|xd_id) + (1|Region),
+# Cumulative multilevel model
+bm.sv.tsd <- brm(group.score ~ tsd + (1|xd_id),
                  data = d.sc.sccs,
                  family = 'cumulative',
                  warmup = 1500,
@@ -618,27 +643,34 @@ bm.sv.tsd <- brm(group.score ~ tsd + (1|xd_id) + (1|Region),
                  cores = 4,
                  control = list(adapt_delta = 0.9))
 
-bm.sv.ri <- brm(group.score ~ ri + (1|xd_id) + (1|Region),
-                data = d.sc.sccs,
-                family = 'cumulative',
-                warmup = 1500,
-                iter = 5000,
-                cores = 4,
-                control = list(adapt_delta = 0.9))
+# category-specific effects
+bm.tsd.cs <- brm(group.score ~ cs(tsd) + (1|xd_id),
+                 data = d.sc.sccs,
+                 family = 'acat',
+                 warmup = 1500,
+                 iter = 5000,
+                 cores = 4,
+                 control = list(adapt_delta = 0.9))
+
 
 # mcmc diagnostics
 mcmc_trace(bm.sv.tsd, regex_pars = '^b_')
 mcmc_rank_hist(bm.sv.tsd, regex_pars = '^b_')
-mcmc_trace(bm.sv.ri, regex_pars = '^b_')
-mcmc_rank_hist(bm.sv.ri, regex_pars = '^b_')
+mcmc_trace(bm.tsd.cs, regex_pars = '^b_')
+mcmc_rank_hist(bm.tsd.cs, regex_pars = '^b_')
 
 # parameter estimates
 summary(bm.sv.tsd)
-summary(bm.sv.ri)
+summary(bm.tsd.cs)
 
-# 95% CI
-ci(bm.sv.tsd)
-ci(bm.sv.ri)
+sv.tsd <- cbind(d.sc.sccs, predict(bm.sv.tsd))
+
+# societies driving the effect
+sv.tsd %>% 
+  filter(`P(Y = 1)` > 0.3) %>% 
+  group_by(xd_id) %>% 
+  summarise(n = n()) %>% 
+  left_join(select(gjb.soc, xd_id, society), by = 'xd_id')
 
 ## figure 4 #####
 
@@ -656,18 +688,15 @@ svcol <- c('#d43f3a',
            '#776fbf',
            '#357ebd')
 
-
-sv.tsd <- cbind(d.sc.sccs, predict(bm.sv.tsd))
-
 d.fig4 <- sv.tsd %>% 
-  rename(Solo = `P(Y = 1)`) %>% 
-  rename(SoloGroup = `P(Y = 2)`) %>% 
+  rename(Interlocked = `P(Y = 1)`) %>% 
+  rename(Unison = `P(Y = 2)`) %>% 
   rename(GroupGroup = `P(Y = 3)`) %>% 
-  rename(Unison = `P(Y = 4)`) %>% 
-  rename(Interlocked = `P(Y = 5)`)
+  rename(SoloGroup = `P(Y = 4)`) %>% 
+  rename(Solo = `P(Y = 5)`)
 
 d.fig4 <- reshape2::melt(d.fig4, 
-                         id.vars = c('song_id','xd_id','Region','group.score','tsd','ri'),
+                         id.vars = c('song_id','xd_id','group.score','tsd','ri'),
                          variable.name = 'Level', value.name = 'Probability')
 
 d.fig4$Level <- factor(d.fig4$Level, levels = c('Interlocked',
@@ -694,7 +723,7 @@ fig4 <- ggplot(d.fig4, aes(x = tsd, y = Probability, colour = Level, fill = Leve
         axis.title = element_text(size = 13),
         axis.text = element_text(size = 10))
 
-ggsave('results/Fig4.pdf', fig4, width = 14, height = 4)
+ggsave('results/Fig4.pdf', fig4, width = 14, height = 4, dpi = 300)
 
 ## Supplementary Materials ####
 
@@ -750,6 +779,33 @@ figS3 <- ggplot(gjb.nhs, aes(y = reorder(society, -prop_diff))) +
         axis.text = element_text(size = 10))
 
 ggsave('results/FigS3.pdf', figS3)
+
+## control test
+
+# check group singing predominance with songs coded both solo and group counted as solo in GJB
+
+# percent of songs overall 0.65 (instead of 0.67)
+gjb.line_1 %>% 
+  distinct(song_id, .keep_all = T) %>% 
+  filter(group == 1) %>% 
+  nrow() / nrow(distinct(gjb.line_1, song_id))
+
+# percent societies with more group singing 0.69  (instead of 0.70)
+gjb.soc <- gjb.line_1 %>%
+  distinct(song_id, .keep_all = T) %>%
+  group_by(society_id) %>%
+  summarise(control_group_songs = sum(group)) %>%
+  left_join(gjb.soc, ., by = 'society_id')
+
+gjb.soc <- gjb.soc %>% 
+  mutate(control_prop_group = control_group_songs/n)
+
+gjb.soc.10 <- gjb.soc %>% filter(n > 9 & !is.na(prop_group))
+
+gjb.soc.10 %>% filter(control_prop_group > 0.5) %>% nrow() / nrow(gjb.soc.10)
+
+# mean proportion of group singing per society 0.64 (instead of 0.66)
+mean(gjb.soc.10$control_prop_group, na.rm = T)
 
 ## Permutation tests ####
 
